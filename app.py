@@ -9,74 +9,81 @@ Original file is located at
 
 import streamlit as st
 import sqlite3
-from groq import Groq
-import os
 
-# ---------------------------
-# PAGE SETTINGS
-# ---------------------------
-st.set_page_config(page_title="FoodHub AI Assistant", layout="centered")
+st.set_page_config(page_title="FoodHub AI Assistant", page_icon="🍔")
 
 st.title("🍔 FoodHub AI Support Assistant")
-st.write("Ask about your order status, delivery ETA, or payment details.")
+st.caption("Ask about order status, delivery ETA, or payment details")
 
 # ---------------------------
-# LOAD GROQ CLIENT
+# SESSION STATE
 # ---------------------------
-GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
-client = Groq(api_key=GROQ_API_KEY)
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+if "cust_id" not in st.session_state:
+    st.session_state.cust_id = None
 
 # ---------------------------
-# DATABASE CONNECTION
+# LOGIN SIMULATION
 # ---------------------------
-def run_query(sql):
+if st.session_state.cust_id is None:
+    st.subheader("🔐 Customer Login (Demo Mode)")
+    cust_input = st.text_input("Enter your Customer ID", "C1011")
+
+    if st.button("Start Chat"):
+        st.session_state.cust_id = cust_input.strip()
+        st.rerun()
+
+    st.stop()
+
+# ---------------------------
+# DISPLAY CHAT HISTORY
+# ---------------------------
+for msg in st.session_state.messages:
+    with st.chat_message(msg["role"]):
+        st.write(msg["content"])
+
+# ---------------------------
+# USER INPUT
+# ---------------------------
+user_input = st.chat_input("Ask about your order...")
+
+if user_input:
+    # Store user message
+    st.session_state.messages.append({"role": "user", "content": user_input})
+
+    # ---------------------------
+    # DATABASE QUERY
+    # ---------------------------
     conn = sqlite3.connect("customer_orders.db")
-    result = conn.execute(sql).fetchall()
+    cursor = conn.cursor()
+
+    query = f"""
+    SELECT order_id, item_in_order, order_status, payment_status, delivery_eta
+    FROM orders
+    WHERE cust_id = '{st.session_state.cust_id}'
+    ORDER BY order_time DESC
+    LIMIT 1;
+    """
+
+    result = cursor.execute(query).fetchone()
     conn.close()
-    return result
 
-# ---------------------------
-# PROMPT
-# ---------------------------
-SYSTEM_PROMPT = """
-You are a SQLite expert for FoodHub.
-
-Table: orders
-Columns: order_id, cust_id, order_time, order_status, payment_status, item_in_order, price, delivery_eta
-
-Rules:
-- Return ONLY SQL
-- Use LOWER() for text matching
-- End with semicolon
+    # ---------------------------
+    # RESPONSE FORMAT
+    # ---------------------------
+    if result:
+        reply = f"""
+📦 **Order ID:** {result[0]}
+🍕 **Item:** {result[1]}
+📍 **Status:** {result[2]}
+💳 **Payment:** {result[3]}
+⏱ **ETA:** {result[4]}
 """
+    else:
+        reply = "No recent orders found for your account."
 
-# ---------------------------
-# CHAT INPUT
-# ---------------------------
-user_input = st.text_input("Ask your question:")
-
-if st.button("Submit") and user_input:
-
-    with st.spinner("Thinking..."):
-
-        # Generate SQL using Groq
-        response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_input}
-            ]
-        )
-
-        sql = response.choices[0].message.content.strip()
-        sql = sql.split(";")[0] + ";"
-
-        st.code(sql, language="sql")
-
-        try:
-            data = run_query(sql)
-            st.write("### Result")
-            st.write(data)
-
-        except Exception as e:
-            st.error("Could not retrieve data.")
+    # Store assistant response
+    st.session_state.messages.append({"role": "assistant", "content": reply})
+    st.rerun()
