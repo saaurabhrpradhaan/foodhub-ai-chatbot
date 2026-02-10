@@ -73,16 +73,42 @@ if user_input:
     # ---------------------------
     # RESPONSE FORMAT
     # ---------------------------
-    if result:
-        reply = f"""
-📦 **Order ID:** {result[0]}
-🍕 **Item:** {result[1]}
-📍 **Status:** {result[2]}
-💳 **Payment:** {result[3]}
-⏱ **ETA:** {result[4]}
-"""
-    else:
+    question = user_input.lower()
+
+    if not result:
         reply = "No recent orders found for your account."
+
+    else:
+        order_id, item, status, payment, eta = result
+
+        # -------- INTENT DETECTION --------
+        if "status" in question:
+            reply = f"📍 Your order {order_id} is currently **{status}**."
+
+        elif "eta" in question or "when" in question or "receive" in question:
+            if eta:
+                reply = f"⏱ Your order is expected by **{eta}**."
+            else:
+                reply = "⏱ Delivery time is not available yet."
+
+        elif "payment" in question:
+            reply = f"💳 Payment status: **{payment}**."
+
+        elif "cancel" in question:
+            if "delivered" in status.lower():
+                reply = "❌ Sorry, the order is already delivered and cannot be cancelled."
+            else:
+                reply = "⚠️ Cancellation request noted. Please contact support to proceed."
+
+        else:
+            # Default full summary
+            reply = f"""
+📦 **Order ID:** {order_id}
+🍕 **Item:** {item}
+📍 **Status:** {status}
+💳 **Payment:** {payment}
+⏱ **ETA:** {eta if eta else 'Not available'}
+"""
 
     # Store assistant response
     st.session_state.messages.append({"role": "assistant", "content": reply})
